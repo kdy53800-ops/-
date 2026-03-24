@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>강아지상 vs 고양이상 테스트 🐶🐱</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --dog: #FF6B6B;
+      --cat: #7C83FD;
+      --bg: #0f0f1a;
+      --card: #1a1a2e;
+      --text: #f0f0f0;
+      --sub: #a0a0c0;
+      --border: rgba(255,255,255,0.07);
+      --glow-dog: rgba(255,107,107,0.35);
+      --glow-cat: rgba(124,131,253,0.35);
+    }
+
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 60px;
+    }
+
+    /* ── Ambient background blobs ── */
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::before {
+      width: 500px; height: 500px;
+      background: var(--dog);
+      top: -100px; left: -100px;
+    }
+    body::after {
+      width: 500px; height: 500px;
+      background: var(--cat);
+      bottom: -100px; right: -100px;
+    }
+
+    /* ── Header ── */
+    header {
+      position: relative; z-index: 1;
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .emoji-row { font-size: 3rem; margin-bottom: 8px; }
+    h1 {
+      font-size: clamp(1.8rem, 5vw, 3rem);
+      font-weight: 900;
+      background: linear-gradient(90deg, var(--dog), var(--cat));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+    }
+    .subtitle {
+      color: var(--sub);
+      font-size: 0.95rem;
+      margin-top: 10px;
+    }
+
+    /* ── Card ── */
+    .card {
+      position: relative; z-index: 1;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 36px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+
+    /* ── Model URL section ── */
+    .model-section {
+      margin-bottom: 28px;
+    }
+    .model-section label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--sub);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .model-row {
+      display: flex;
+      gap: 8px;
+    }
+    .model-row input {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-size: 0.82rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .model-row input:focus { border-color: rgba(124,131,253,0.5); }
+    .model-row input::placeholder { color: var(--sub); }
+    .btn-load {
+      background: linear-gradient(135deg, #7C83FD, #5f66d4);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 10px 16px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn-load:hover { opacity: 0.9; transform: scale(1.03); }
+    .btn-load:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Upload area ── */
+    .upload-area {
+      border: 2px dashed rgba(255,255,255,0.15);
+      border-radius: 16px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.25s, background 0.25s;
+      position: relative;
+      margin-bottom: 24px;
+    }
+    .upload-area:hover, .upload-area.drag-over {
+      border-color: rgba(124,131,253,0.6);
+      background: rgba(124,131,253,0.05);
+    }
+    .upload-area input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .upload-icon { font-size: 2.8rem; margin-bottom: 10px; }
+    .upload-text { font-size: 0.92rem; color: var(--sub); }
+    .upload-text span { color: var(--cat); font-weight: 700; }
+
+    /* ── Preview ── */
+    #preview-wrap {
+      display: none;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    #preview-img {
+      width: 100%;
+      max-height: 280px;
+      object-fit: contain;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    /* ── Analyze button ── */
+    #btn-analyze {
+      display: none;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 14px;
+      font-size: 1rem;
+      font-weight: 900;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--dog), var(--cat));
+      color: #fff;
+      letter-spacing: 0.03em;
+      transition: opacity 0.2s, transform 0.15s;
+      margin-bottom: 28px;
+    }
+    #btn-analyze:hover { opacity: 0.9; transform: scale(1.02); }
+    #btn-analyze:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Result ── */
+    #result-section { display: none; }
+
+    .result-banner {
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 20px;
+      transition: all 0.4s ease;
+    }
+    .result-banner.dog {
+      background: linear-gradient(135deg, rgba(255,107,107,0.15), rgba(255,107,107,0.05));
+      border: 1px solid rgba(255,107,107,0.35);
+      box-shadow: 0 0 40px var(--glow-dog);
+    }
+    .result-banner.cat {
+      background: linear-gradient(135deg, rgba(124,131,253,0.15), rgba(124,131,253,0.05));
+      border: 1px solid rgba(124,131,253,0.35);
+      box-shadow: 0 0 40px var(--glow-cat);
+    }
+    .result-emoji { font-size: 4rem; margin-bottom: 8px; }
+    .result-label {
+      font-size: 1.8rem;
+      font-weight: 900;
+      margin-bottom: 4px;
+    }
+    .result-label.dog { color: var(--dog); }
+    .result-label.cat { color: var(--cat); }
+    .result-desc { font-size: 0.88rem; color: var(--sub); }
+
+    /* ── Bars ── */
+    .bar-list { display: flex; flex-direction: column; gap: 12px; }
+    .bar-item { display: block; }
+    .bar-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .bar-track {
+      height: 10px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.8s cubic-bezier(.22,1,.36,1);
+    }
+    .bar-fill.dog { background: linear-gradient(90deg, #FF6B6B, #FF8E53); }
+    .bar-fill.cat { background: linear-gradient(90deg, #7C83FD, #a78bfa); }
+
+    /* ── Status message ── */
+    #status {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--sub);
+      margin-top: 8px;
+      min-height: 20px;
+    }
+    #status.error { color: #ff6b6b; }
+    #status.ok { color: #6bf990; }
+
+    /* ── Reset ── */
+    #btn-reset {
+      display: none;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--sub);
+      border-radius: 10px;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      margin: 16px auto 0;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #btn-reset:hover { border-color: var(--sub); color: var(--text); }
+
+    /* ── Footer ── */
+    footer {
+      position: relative; z-index: 1;
+      margin-top: 32px;
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.2);
+      text-align: center;
+    }
+
+    /* ── Loading spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Fade-in ── */
+    .fade-in {
+      animation: fadeIn 0.5s ease forwards;
+    }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
+
+    /* ── Pulse dot ── */
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="emoji-row">🐶 vs 🐱</div>
+  <h1>강아지상 vs 고양이상</h1>
+  <p class="subtitle">사진을 업로드하면 AI가 분석해드립니다!</p>
+</header>
+
+<div class="card">
+
+  <!-- Model status -->
+  <div id="model-status-bar" style="
+    display:flex;align-items:center;gap:10px;
+    background:rgba(255,255,255,0.04);border:1px solid var(--border);
+    border-radius:12px;padding:10px 16px;margin-bottom:24px;font-size:0.82rem;
+  ">
+    <span id="model-status-dot" style="width:10px;height:10px;border-radius:50%;background:#555;flex-shrink:0;"></span>
+    <span id="model-status-text" style="color:var(--sub);">모델 로딩 중...</span>
+  </div>
+
+  <!-- Upload area -->
+  <div class="upload-area" id="upload-area"
+       ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+    <input type="file" id="file-input" accept="image/*" onchange="onFileChange(event)" />
+    <div class="upload-icon">📂</div>
+    <p class="upload-text"><span>클릭하거나 파일을 드래그</span>하여 이미지를 선택하세요</p>
+    <p class="upload-text" style="margin-top:6px;font-size:0.78rem;">JPG, PNG, GIF, WEBP 지원</p>
+  </div>
+
+  <!-- Preview -->
+  <div id="preview-wrap">
+    <img id="preview-img" alt="미리보기" />
+  </div>
+
+
+
+  <!-- Result section -->
+  <div id="result-section" class="fade-in">
+    <div class="result-banner" id="result-banner">
+      <div class="result-emoji" id="result-emoji"></div>
+      <div class="result-label" id="result-label"></div>
+      <div class="result-desc" id="result-desc"></div>
+    </div>
+
+    <div class="bar-list" id="bar-list"></div>
+  </div>
+
+  <p id="status"></p>
+
+  <div style="text-align:center;">
+    <button id="btn-reset" onclick="resetAll()">🔄 다시 테스트</button>
+  </div>
+</div>
+
+<footer>Powered by Google Teachable Machine &amp; TensorFlow.js</footer>
+
+<script>
+  const MODEL_URL = 'https://teachablemachine.withgoogle.com/models/HsQK4-ivO/';
+  let model = null;
+  let imageLoaded = false;
+
+  /* ── 모델 자동 로드 ── */
+  async function initModel() {
+    setModelStatus('loading', '모델 불러오는 중...');
+    try {
+      model = await tmImage.load(MODEL_URL + 'model.json', MODEL_URL + 'metadata.json');
+      setModelStatus('ok', '✅ AI 모델 준비 완료 — 이미지를 올려주세요!');
+    } catch (e) {
+      console.error(e);
+      setModelStatus('error', '❌ 모델 로드 실패. 인터넷 연결을 확인하세요.');
+    }
+  }
+
+  function setModelStatus(state, text) {
+    const dot  = document.getElementById('model-status-dot');
+    const span = document.getElementById('model-status-text');
+    span.textContent = text;
+    const colors = { loading: '#f5a623', ok: '#6bf990', error: '#ff6b6b' };
+    dot.style.background = colors[state] || '#555';
+    if (state === 'loading') {
+      dot.style.animation = 'pulse 1s ease-in-out infinite';
+    } else {
+      dot.style.animation = 'none';
+    }
+  }
+
+  /* ── 파일 선택 ── */
+  function onFileChange(e) {
+    const file = e.target.files[0];
+    if (file) loadPreview(file);
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    document.getElementById('upload-area').classList.add('drag-over');
+  }
+  function onDragLeave() {
+    document.getElementById('upload-area').classList.remove('drag-over');
+  }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('upload-area').classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) loadPreview(file);
+  }
+
+  function loadPreview(file) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = document.getElementById('preview-img');
+      img.src = ev.target.result;
+      img.onload = () => {
+        imageLoaded = true;
+        document.getElementById('preview-wrap').style.display = 'block';
+        document.getElementById('result-section').style.display = 'none';
+        document.getElementById('btn-reset').style.display = 'none';
+        // 자동 분석 시작
+        if (model) analyze();
+        else setStatus('⏳ 모델 로드를 기다리는 중... 잠시 후 자동 분석됩니다.', '');
+      };
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /* ── 분석 (자동 호출) ── */
+  async function analyze() {
+    if (!model || !imageLoaded) return;
+    setStatus('🔍 AI가 분석 중입니다...', '');
+
+    try {
+      const img = document.getElementById('preview-img');
+      const predictions = await model.predict(img);
+
+      predictions.sort((a, b) => b.probability - a.probability);
+      showResult(predictions, predictions[0]);
+      setStatus('', '');
+      document.getElementById('btn-reset').style.display = 'inline-block';
+    } catch (e) {
+      console.error(e);
+      setStatus('❌ 분석 중 오류가 발생했습니다.', 'error');
+    }
+  }
+
+  /* ── 결과 표시 ── */
+  function showResult(predictions, top) {
+    const section = document.getElementById('result-section');
+    const banner  = document.getElementById('result-banner');
+    const emoji   = document.getElementById('result-emoji');
+    const label   = document.getElementById('result-label');
+    const desc    = document.getElementById('result-desc');
+    const barList = document.getElementById('bar-list');
+
+    const isDog = /dog|강아지/i.test(top.className);
+    const isCat = /cat|고양이/i.test(top.className);
+
+    // guess based on top class if not matched
+    const type = isDog ? 'dog' : isCat ? 'cat' : 'dog';
+    const pct  = Math.round(top.probability * 100);
+
+    banner.className = 'result-banner ' + type;
+    emoji.textContent  = type === 'dog' ? '🐶' : '🐱';
+    label.className    = 'result-label ' + type;
+    label.textContent  = type === 'dog' ? '강아지상 🐶' : '고양이상 🐱';
+    desc.textContent   = `${pct}%의 확률로 ${type === 'dog' ? '강아지상' : '고양이상'}입니다!`;
+
+    // bars
+    barList.innerHTML = '';
+    predictions.forEach(p => {
+      const cls  = p.className;
+      const isPDog = /dog|강아지/i.test(cls);
+      const barType = isPDog ? 'dog' : 'cat';
+      const barPct  = Math.round(p.probability * 100);
+
+      const item = document.createElement('div');
+      item.className = 'bar-item';
+      item.innerHTML = `
+        <div class="bar-header">
+          <span>${cls}</span>
+          <span>${barPct}%</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill ${barType}" id="bar-${cls}" style="width:0%"></div>
+        </div>`;
+      barList.appendChild(item);
+
+      // animate
+      setTimeout(() => {
+        const el = document.getElementById('bar-'+cls);
+        if (el) el.style.width = barPct + '%';
+      }, 50);
+    });
+
+    section.style.display = 'block';
+    section.classList.remove('fade-in');
+    void section.offsetWidth;
+    section.classList.add('fade-in');
+  }
+
+  /* ── 리셋 ── */
+  function resetAll() {
+    imageLoaded = false;
+    document.getElementById('file-input').value = '';
+    document.getElementById('preview-wrap').style.display = 'none';
+    document.getElementById('preview-img').src = '';
+    document.getElementById('result-section').style.display = 'none';
+    document.getElementById('btn-reset').style.display = 'none';
+    setStatus('', '');
+  }
+
+  /* ── 페이지 로드 시 즉시 모델 초기화 ── */
+  document.addEventListener('DOMContentLoaded', initModel);
+
+  /* ── 상태 메시지 ── */
+  function setStatus(msg, type) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = type || '';
+  }
+</script>
+</body>
+</html>
